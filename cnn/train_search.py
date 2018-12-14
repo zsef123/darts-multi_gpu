@@ -77,7 +77,7 @@ def main():
   if len(gpus)>1:
     model = nn.DataParallel(model)
   model = model.cuda()
-
+  
   arch_params = list(map(id, model.module.arch_parameters()))
   weight_params = filter(lambda p: id(p) not in arch_params, 
                         model.parameters())
@@ -110,7 +110,7 @@ def main():
   scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, float(args.epochs), eta_min=args.learning_rate_min)
 
-  architect = Architect(model, args)
+  architect = Architect(model, criterion, args)
 
   for epoch in range(args.epochs):
     scheduler.step()
@@ -128,7 +128,8 @@ def main():
     logging.info('train_acc %f', train_acc)
 
     # validation
-    valid_acc, valid_obj = infer(valid_queue, model, criterion)
+    with torch.no_grad():
+      valid_acc, valid_obj = infer(valid_queue, model, criterion)
     logging.info('valid_acc %f', valid_acc)
 
     utils.save(model, os.path.join(args.save, 'weights.pt'))

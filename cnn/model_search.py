@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from operations import *
-from torch.autograd import Variable
 from genotypes import PRIMITIVES
 from genotypes import Genotype
 
@@ -20,7 +19,6 @@ class MixedOp(nn.Module):
 
   def forward(self, x, weights):
     return sum(w * op(x) for w, op in zip(weights, self._ops))
-    # return sum(op(x) for op in self._ops)
 
 
 class Cell(nn.Module):
@@ -112,10 +110,6 @@ class Network(nn.Module):
     out = self.global_pooling(s1)
     logits = self.classifier(out.view(out.size(0),-1))
     return logits
-
-  def _loss(self, input, target):
-    logits = self(input)
-    return self._criterion(logits, target) 
 
   def _initialize_alphas(self):
     k = sum(1 for i in range(self._steps) for n in range(2+i))

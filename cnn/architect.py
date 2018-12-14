@@ -10,10 +10,11 @@ def _concat(xs):
 
 class Architect(object):
 
-  def __init__(self, model, args):
+  def __init__(self, model, criterion, args):
     self.network_momentum = args.momentum
     self.network_weight_decay = args.weight_decay
     self.model = model
+    self.criterion = criterion
     self.optimizer = torch.optim.Adam(self.model.module.arch_parameters(),
         lr=args.arch_learning_rate, betas=(0.5, 0.999), weight_decay=args.arch_weight_decay)
 
@@ -37,7 +38,9 @@ class Architect(object):
     self.optimizer.step()
 
   def _backward_step(self, input_valid, target_valid):
-    loss = self.model.module._loss(input_valid, target_valid)
+    logits = self.model(input_valid)
+    loss = self.criterion(logits, target_valid)
+
     loss.backward()
 
   def _backward_step_unrolled(self, input_train, target_train, input_valid, target_valid, eta, network_optimizer):
