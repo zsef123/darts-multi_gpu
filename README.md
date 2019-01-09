@@ -1,4 +1,5 @@
 # Differentiable Architecture Search
+## multi-gpu implementation and gpu utilization modified
 Code accompanying the paper
 > [DARTS: Differentiable Architecture Search](https://arxiv.org/abs/1806.09055)\
 > Hanxiao Liu, Karen Simonyan, Yiming Yang.\
