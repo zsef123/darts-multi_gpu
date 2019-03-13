@@ -113,7 +113,7 @@ def main():
   valid_queue = CSVLoader(args.data + "valid.csv", args.batch_size,
                                transform=TEST_AUGS_3D, aug_rate=0,
                                num_workers=32, shuffle=False, pin_memory=True, drop_last=False)
-  test_loader = CSVLoader(args.data + "test.csv", args.batch_size,
+  test_queue = CSVLoader(args.data + "test.csv", args.batch_size,
                                 transform=TEST_AUGS_3D, aug_rate=0,
                                 num_workers=32, shuffle=False, drop_last=False)
 
@@ -128,9 +128,12 @@ def main():
     train_acc, train_obj = train(train_queue, model, criterion_smooth, optimizer)
     logging.info('train_acc %f', train_acc)
 
-    valid_acc_top1, valid_acc_top5, valid_obj = infer(valid_queue, model, criterion)
+    valid_acc_top1, valid_obj = infer(valid_queue, model, criterion)
     logging.info('valid_acc_top1 %f', valid_acc_top1)
-    logging.info('valid_acc_top5 %f', valid_acc_top5)
+    
+    test_acc_top1, test_obj = infer(test_queue, model, criterion)
+    logging.info('test_acc_top1 %f', test_acc_top1)
+
 
     is_best = False
     if valid_acc_top1 > best_acc_top1:
@@ -142,20 +145,17 @@ def main():
       'state_dict': model.state_dict(),
       'best_acc_top1': best_acc_top1,
       'optimizer' : optimizer.state_dict(),
-      }, is_best, args.save)
+      }, is_best, args.save, valid_acc_top1, test_acc_top1)
 
 
 def train(train_queue, model, criterion, optimizer):
   objs = utils.AvgrageMeter()
   top1 = utils.AvgrageMeter()
-  top5 = utils.AvgrageMeter()
   model.train()
 
   for step, (input, target) in enumerate(train_queue):
     target = target.cuda(async=True)
     input = input.cuda()
-    input = Variable(input)
-    target = Variable(target)
 
     optimizer.zero_grad()
     logits, logits_aux = model(input)
@@ -168,14 +168,13 @@ def train(train_queue, model, criterion, optimizer):
     nn.utils.clip_grad_norm(model.parameters(), args.grad_clip)
     optimizer.step()
 
-    prec1, prec5 = utils.accuracy(logits, target, topk=(1, 5))
+    prec1 = utils.accuracy(logits, target)
     n = input.size(0)
     objs.update(loss.data[0], n)
-    top1.update(prec1.data[0], n)
-    top5.update(prec5.data[0], n)
+    top1.update(prec1, n)
 
     if step % args.report_freq == 0:
-      logging.info('train %03d %e %f %f', step, objs.avg, top1.avg, top5.avg)
+      logging.info('train %03d %e %f', step, objs.avg, top1.avg)
 
   return top1.avg, objs.avg
 
@@ -183,26 +182,24 @@ def train(train_queue, model, criterion, optimizer):
 def infer(valid_queue, model, criterion):
   objs = utils.AvgrageMeter()
   top1 = utils.AvgrageMeter()
-  top5 = utils.AvgrageMeter()
   model.eval()
-
+  # TODO : why not using no_grad ?
   for step, (input, target) in enumerate(valid_queue):
-    input = Variable(input, volatile=True).cuda()
-    target = Variable(target, volatile=True).cuda(async=True)
+    input = input.cuda()
+    target = target.cuda(async=True)
 
     logits, _ = model(input)
     loss = criterion(logits, target)
 
-    prec1, prec5 = utils.accuracy(logits, target, topk=(1, 5))
+    prec1 = utils.accuracy(logits, target, topk=(1))
     n = input.size(0)
     objs.update(loss.data[0], n)
-    top1.update(prec1.data[0], n)
-    top5.update(prec5.data[0], n)
+    top1.update(prec1, n)
 
     if step % args.report_freq == 0:
-      logging.info('valid %03d %e %f %f', step, objs.avg, top1.avg, top5.avg)
+      logging.info('valid %03d %e %f', step, objs.avg, top1.avg)
 
-  return top1.avg, top5.avg, objs.avg
+  return top1.avg, objs.avg
 
 
 if __name__ == '__main__':

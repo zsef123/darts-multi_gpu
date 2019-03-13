@@ -26,15 +26,9 @@ def accuracy(output, target, topk=(1,)):
   maxk = max(topk)
   batch_size = target.size(0)
 
-  _, pred = output.topk(maxk, 1, True, True)
-  pred = pred.t()
-  correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-  res = []
-  for k in topk:
-    correct_k = correct[:k].view(-1).float().sum(0)
-    res.append(correct_k.mul_(100.0/batch_size))
-  return res
+  _, idx = output_.max(dim=1)
+  correct = torch.sum(target == idx).float().cpu().item()
+  return correct / batch_size * 100.0
 
 
 class Cutout(object):
@@ -83,11 +77,11 @@ def count_parameters_in_MB(model):
   return np.sum(np.prod(v.size()) for name, v in model.named_parameters() if "auxiliary" not in name)/1e6
 
 
-def save_checkpoint(state, is_best, save):
+def save_checkpoint(state, is_best, save, valid, test):
   filename = os.path.join(save, 'checkpoint.pth.tar')
   torch.save(state, filename)
   if is_best:
-    best_filename = os.path.join(save, 'model_best.pth.tar')
+    best_filename = os.path.join(save, 'valid%.4f_test%.4f_model_best.pth.tar'%(vaild, test))
     shutil.copyfile(filename, best_filename)
 
 
