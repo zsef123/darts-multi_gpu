@@ -38,6 +38,7 @@ parser.add_argument('--auxiliary_weight', type=float, default=0.4, help='weight 
 parser.add_argument('--drop_path_prob', type=float, default=0, help='drop path probability')
 parser.add_argument('--save', type=str, default='EXP', help='experiment name')
 parser.add_argument('--seed', type=int, default=0, help='random seed')
+parser.add_argument('--aug', type=float, default=0.5, help='Augmentation rate')
 parser.add_argument('--arch', type=str, default='DARTS', help='which architecture to use')
 parser.add_argument('--grad_clip', type=float, default=5., help='gradient clipping')
 parser.add_argument('--label_smooth', type=float, default=0.1, help='label smoothing')
@@ -45,6 +46,7 @@ parser.add_argument('--gamma', type=float, default=0.97, help='learning rate dec
 parser.add_argument('--decay_period', type=int, default=1, help='epochs between two learning rate decays')
 args = parser.parse_args()
 
+os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
 args.save = 'eval-{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
 utils.create_exp_dir(args.save, scripts_to_save=glob.glob('*.py'))
 
@@ -55,7 +57,7 @@ fh = logging.FileHandler(os.path.join(args.save, 'log.txt'))
 fh.setFormatter(logging.Formatter(log_format))
 logging.getLogger().addHandler(fh)
 
-CLASSES = 5
+CLASSES = 3
 
 
 class CrossEntropyLabelSmooth(nn.Module):
@@ -75,17 +77,11 @@ class CrossEntropyLabelSmooth(nn.Module):
 
 
 def main():
-  if not torch.cuda.is_available():
-    logging.info('no gpu device available')
-    sys.exit(1)
-
   np.random.seed(args.seed)
-  torch.cuda.set_device(args.gpu)
   cudnn.benchmark = True
   torch.manual_seed(args.seed)
   cudnn.enabled=True
   torch.cuda.manual_seed(args.seed)
-  logging.info('gpu device = %d' % args.gpu)
   logging.info("args = %s", args)
 
   genotype = eval("genotypes.%s" % args.arch)
@@ -108,11 +104,11 @@ def main():
 
   train_queue = CSVLoader(args.data + "train.csv", args.batch_size,
                                  transform=TRAIN_AUGS_3D, aug_rate=args.aug,
-                                 num_workers=32, shuffle=True, pin_memory=True, drop_last=True)
+                                 num_workers=32, shuffle=True, drop_last=True)
 
   valid_queue = CSVLoader(args.data + "valid.csv", args.batch_size,
                                transform=TEST_AUGS_3D, aug_rate=0,
-                               num_workers=32, shuffle=False, pin_memory=True, drop_last=False)
+                               num_workers=32, shuffle=False, drop_last=False)
   test_queue = CSVLoader(args.data + "test.csv", args.batch_size,
                                 transform=TEST_AUGS_3D, aug_rate=0,
                                 num_workers=32, shuffle=False, drop_last=False)
@@ -123,7 +119,7 @@ def main():
   for epoch in range(args.epochs):
     scheduler.step()
     logging.info('epoch %d lr %e', epoch, scheduler.get_lr()[0])
-    model.drop_path_prob = args.drop_path_prob * epoch / args.epochs
+    model.module.drop_path_prob = args.drop_path_prob * epoch / args.epochs
 
     train_acc, train_obj = train(train_queue, model, criterion_smooth, optimizer)
     logging.info('train_acc %f', train_acc)
@@ -153,7 +149,7 @@ def train(train_queue, model, criterion, optimizer):
   top1 = utils.AvgrageMeter()
   model.train()
 
-  for step, (input, target) in enumerate(train_queue):
+  for step, (input, target, _) in enumerate(train_queue):
     target = target.cuda(async=True)
     input = input.cuda()
 
@@ -170,11 +166,11 @@ def train(train_queue, model, criterion, optimizer):
 
     prec1 = utils.accuracy(logits, target)
     n = input.size(0)
-    objs.update(loss.data[0], n)
+    objs.update(loss.item(), n)
     top1.update(prec1, n)
 
     if step % args.report_freq == 0:
-      logging.info('train %03d %e %f', step, objs.avg, top1.avg)
+      logging.info('train step : %03d loss : %e acc : %.2f', step, objs.avg, top1.avg)
 
   return top1.avg, objs.avg
 
@@ -184,7 +180,7 @@ def infer(valid_queue, model, criterion):
   top1 = utils.AvgrageMeter()
   model.eval()
   # TODO : why not using no_grad ?
-  for step, (input, target) in enumerate(valid_queue):
+  for step, (input, target, _) in enumerate(valid_queue):
     input = input.cuda()
     target = target.cuda(async=True)
 
@@ -193,11 +189,11 @@ def infer(valid_queue, model, criterion):
 
     prec1 = utils.accuracy(logits, target, topk=(1))
     n = input.size(0)
-    objs.update(loss.data[0], n)
+    objs.update(loss.item(), n)
     top1.update(prec1, n)
 
     if step % args.report_freq == 0:
-      logging.info('valid %03d %e %f', step, objs.avg, top1.avg)
+      logging.info('valid step : %03d loss : %e acc : %.2f', step, objs.avg, top1.avg)
 
   return top1.avg, objs.avg
 

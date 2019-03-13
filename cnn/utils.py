@@ -26,7 +26,7 @@ def accuracy(output, target, topk=(1,)):
   maxk = max(topk)
   batch_size = target.size(0)
 
-  _, idx = output_.max(dim=1)
+  _, idx = output.max(dim=1)
   correct = torch.sum(target == idx).float().cpu().item()
   return correct / batch_size * 100.0
 
