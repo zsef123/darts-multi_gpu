@@ -1,0 +1,178 @@
+ptrain_search.py에서 보면
+```
+model = Network(args.init_channels, CIFAR_CLASSES, 
+                args.layers, criterion)
+```
+가 있어서
+
+Network를 정리해보자
+
+stem -> Cells -> global avg pool -> Linear 형태로 구성되어 있다.
+
+좀더 자세하게
+Initialize
+
+1. stem
+```
+self.stem = nn.Sequential(
+      nn.Conv2d(3, C_curr, 3, padding=1, bias=False),
+      nn.BatchNorm2d(C_curr)
+    )
+```
+입력 채널 -> init_channels * stem_multiplier로 채널 바꿔준다.
+
+2. Cells
+`self.cells = nn.ModuleList()`
+
+normal cell 3개 reduction cell 1개 형태로 반복,
+reduction cell에서 channel을 2배로 뻥튀기.
+```
+if i in [layers//3, 2*layers//3]:
+    C_curr *= 2
+    reduction = True
+else:
+    reduction = False
+```
+
+셀을 이렇게 만들어진다.
+```
+cell = Cell(steps, multiplier, 
+            C_prev_prev, C_prev, C_curr, 
+            reduction, reduction_prev)
+```
+
+3. global pool, Linear
+```
+self.global_pooling = nn.AdaptiveAvgPool2d(1)
+self.classifier = nn.Linear(C_prev, num_classes)
+```
+그렇다 간단하다!!!
+------------------------------
+Cells
+```
+cell = Cell(steps, multiplier, 
+            C_prev_prev, C_prev, C_curr, 
+            reduction, reduction_prev)
+```
+
+cell은 2개의 입력을 받아서 하나의 output을 내는 거였다.
+s0, s1 -> each preprocess -> ops -> concat -> output
+
+preprocess는 FactorizedReduce, ReLUConvBN 2가지 인데
+
+```
+if reduction_prev:
+    self.preprocess0 = FactorizedReduce(C_prev_prev, C, affine=False)
+else:
+    self.preprocess0 = ReLUConvBN(C_prev_prev, C, 1, 1, 0, affine=False)
+self.preprocess1 = ReLUConvBN(C_prev, C, 1, 1, 0, affine=False)
+```
+전 레이어의 채널을 모두 C channel로 바꿔준다.
+이 때 BN의 affine을 True로 해준다.
+??reduction_prev이 true일때 왜 FactorizedReduce해줄까??
+
+------------------------------
+FactorizedReduce는 Conv 2개(kernel 1, stride 2, padd 0)와 BN 1개로 이루어져있다.
+ReLU -> concat[conv1, conv2] -> bn의 형태.
+```
+out = torch.cat([self.conv_1(x), 
+                 self.conv_2(x[:,:,1:,1:])], dim=1)
+```
+??왜 conv2는 indexing이 저럴까??
+
+ReLUConvBN는 그냥 ReLU -> conv -> BN으로 되어있다.
+-------------------------------
+
+다시 Cells로 돌아와서
+preprocess -> ops를 거치게 되니까 ops 선언을 보면
+```
+self._ops = nn.ModuleList()
+self._bns = nn.ModuleList()
+for i in range(self._steps):
+    for j in range(2+i):
+    stride = 2 if reduction and j < 2 else 1
+    op = MixedOp(C, stride)
+    self._ops.append(op)
+```
+?? i, j 왜 저렇게 순회하지 ??
+
+MixedOp를 보자
+
+------------------------
+MixedOp
+```
+class MixedOp(nn.Module):
+  def __init__(self, C, stride):
+    super(MixedOp, self).__init__()
+    self._ops = nn.ModuleList()
+    for primitive in PRIMITIVES:
+      op = OPS[primitive](C, stride, False)
+      if 'pool' in primitive:
+        op = nn.Sequential(op, nn.BatchNorm2d(C, affine=False))
+      self._ops.append(op)
+```
+
+PRIMITIVES : avg_pool_3x3같은 OPS의 Key String이 들어 있다.
+OPS : dict로 operator name : function으로 되어 있다.
+
+```
+def forward(self, x, weights):
+    return sum(w * op(x) 
+               for w, op in zip(weights, self._ops))
+```
+각 operators에 input을 통과 시킨 값과 각각의 weights를 곱해 준 것의 합을 구한다.
+
+?? op(x)의 dimension이 어떻게 되지??
+--------------------------
+이렇게 Cells에 Initialize 부분 끝이고 이제 Forward를 보면
+
+```
+states = [s0, s1]
+offset = 0
+for i in range(self._steps):
+    s = sum(self._ops[offset + j](h, weights[offset + j]) 
+            for j, h in enumerate(states))
+    offset += len(states)
+    states.append(s)
+
+return torch.cat(states[-self._multiplier:], dim=1)
+```
+step 별로 풀어서 써보면
+step 1:
+states = [s0, s1], offset = 0
+1_s =   ops[0](s0, weights[0])
+      + ops[1](s1, weights[1])
+
+step 2:
+states = [s0, s1, 1_s], offset = 2
+2_s =   ops[2](s0,  weights[2])
+      + ops[3](s1,  weights[3])
+      + ops[4](1_s, weights[4])
+
+step 3:
+states = [s0, s1, 1_s, 2_s], offset = 5
+3_s =   ops[5](s0,  weights[5])
+      + ops[6](s1,  weights[6])
+      + ops[7](1_s, weights[7])
+      + ops[8](2_s, weights[8])
+이런 식으로 진행된다.
+?? 무슨 의미지 저게 쉬불 ??
+
+그리고 마지막 multiplier 개수만큼 concat
+----------------------------
+
+이제 다시 Network로 돌아가서 
+
+Forward 보자.
+
+1. stem을 통과해서 s0, s1 두개의 아웃풋을 뽑고.
+2. alpha에 softmax를 거쳐 weight를 얻은 후에,
+3. s0, s1 두 개의 input과 weight를 cell에 통과시킨다.
+4. 그후에 pool, linear를 거쳐 output을 뽑는다.
+
+?? Cell에서 weight이 쓰이는걸 좀 더 집중적으로 봐보자 ??
+
+=============================
+
+전체 Arichtecture의 학습 부분은 어떻게 진행 될까?
+

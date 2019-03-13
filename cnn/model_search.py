@@ -14,7 +14,7 @@ class MixedOp(nn.Module):
     for primitive in PRIMITIVES:
       op = OPS[primitive](C, stride, False)
       if 'pool' in primitive:
-        op = nn.Sequential(op, nn.BatchNorm2d(C, affine=False))
+        op = nn.Sequential(op, nn.BatchNorm3d(C, affine=False))
       self._ops.append(op)
 
   def forward(self, x, weights):
@@ -70,8 +70,8 @@ class Network(nn.Module):
 
     C_curr = stem_multiplier*C
     self.stem = nn.Sequential(
-      nn.Conv2d(3, C_curr, 3, padding=1, bias=False),
-      nn.BatchNorm2d(C_curr)
+      nn.Conv3d(1, C_curr, 3, padding=1, bias=False),
+      nn.BatchNorm3d(C_curr)
     )
  
     C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
@@ -88,7 +88,7 @@ class Network(nn.Module):
       self.cells += [cell]
       C_prev_prev, C_prev = C_prev, multiplier*C_curr
 
-    self.global_pooling = nn.AdaptiveAvgPool2d(1)
+    self.global_pooling = nn.AdaptiveAvgPool3d(1)
     self.classifier = nn.Linear(C_prev, num_classes)
 
     self._initialize_alphas()

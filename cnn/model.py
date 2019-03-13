@@ -67,12 +67,12 @@ class AuxiliaryHeadCIFAR(nn.Module):
     super(AuxiliaryHeadCIFAR, self).__init__()
     self.features = nn.Sequential(
       nn.ReLU(inplace=True),
-      nn.AvgPool2d(5, stride=3, padding=0, count_include_pad=False), # image size = 2 x 2
-      nn.Conv2d(C, 128, 1, bias=False),
-      nn.BatchNorm2d(128),
+      nn.AvgPool3d(5, stride=3, padding=0, count_include_pad=False), # image size = 2 x 2
+      nn.Conv3d(C, 128, 1, bias=False),
+      nn.BatchNorm3d(128),
       nn.ReLU(inplace=True),
-      nn.Conv2d(128, 768, 2, bias=False),
-      nn.BatchNorm2d(768),
+      nn.Conv3d(128, 768, 2, bias=False),
+      nn.BatchNorm3d(768),
       nn.ReLU(inplace=True)
     )
     self.classifier = nn.Linear(768, num_classes)
@@ -90,14 +90,14 @@ class AuxiliaryHeadImageNet(nn.Module):
     super(AuxiliaryHeadImageNet, self).__init__()
     self.features = nn.Sequential(
       nn.ReLU(inplace=True),
-      nn.AvgPool2d(5, stride=2, padding=0, count_include_pad=False),
-      nn.Conv2d(C, 128, 1, bias=False),
-      nn.BatchNorm2d(128),
+      nn.AvgPool3d(5, stride=2, padding=0, count_include_pad=False),
+      nn.Conv3d(C, 128, 1, bias=False),
+      nn.BatchNorm3d(128),
       nn.ReLU(inplace=True),
-      nn.Conv2d(128, 768, 2, bias=False),
+      nn.Conv3d(128, 768, 2, bias=False),
       # NOTE: This batchnorm was omitted in my earlier implementation due to a typo.
       # Commenting it out for consistency with the experiments in the paper.
-      # nn.BatchNorm2d(768),
+      # nn.BatchNorm3d(768),
       nn.ReLU(inplace=True)
     )
     self.classifier = nn.Linear(768, num_classes)
@@ -118,8 +118,8 @@ class NetworkCIFAR(nn.Module):
     stem_multiplier = 3
     C_curr = stem_multiplier*C
     self.stem = nn.Sequential(
-      nn.Conv2d(3, C_curr, 3, padding=1, bias=False),
-      nn.BatchNorm2d(C_curr)
+      nn.Conv3d(1, C_curr, 3, padding=1, bias=False),
+      nn.BatchNorm3d(C_curr)
     )
     
     C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
@@ -140,7 +140,7 @@ class NetworkCIFAR(nn.Module):
 
     if auxiliary:
       self.auxiliary_head = AuxiliaryHeadCIFAR(C_to_auxiliary, num_classes)
-    self.global_pooling = nn.AdaptiveAvgPool2d(1)
+    self.global_pooling = nn.AdaptiveAvgPool3d(1)
     self.classifier = nn.Linear(C_prev, num_classes)
 
   def forward(self, input):
@@ -164,17 +164,17 @@ class NetworkImageNet(nn.Module):
     self._auxiliary = auxiliary
 
     self.stem0 = nn.Sequential(
-      nn.Conv2d(3, C // 2, kernel_size=3, stride=2, padding=1, bias=False),
-      nn.BatchNorm2d(C // 2),
+      nn.Conv3d(3, C // 2, kernel_size=3, stride=2, padding=1, bias=False),
+      nn.BatchNorm3d(C // 2),
       nn.ReLU(inplace=True),
-      nn.Conv2d(C // 2, C, 3, stride=2, padding=1, bias=False),
-      nn.BatchNorm2d(C),
+      nn.Conv3d(C // 2, C, 3, stride=2, padding=1, bias=False),
+      nn.BatchNorm3d(C),
     )
 
     self.stem1 = nn.Sequential(
       nn.ReLU(inplace=True),
-      nn.Conv2d(C, C, 3, stride=2, padding=1, bias=False),
-      nn.BatchNorm2d(C),
+      nn.Conv3d(C, C, 3, stride=2, padding=1, bias=False),
+      nn.BatchNorm3d(C),
     )
 
     C_prev_prev, C_prev, C_curr = C, C, C
@@ -196,7 +196,7 @@ class NetworkImageNet(nn.Module):
 
     if auxiliary:
       self.auxiliary_head = AuxiliaryHeadImageNet(C_to_auxiliary, num_classes)
-    self.global_pooling = nn.AvgPool2d(7)
+    self.global_pooling = nn.AvgPool3d(7)
     self.classifier = nn.Linear(C_prev, num_classes)
 
   def forward(self, input):
