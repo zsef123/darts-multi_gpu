@@ -164,7 +164,7 @@ class NetworkImageNet(nn.Module):
     self._auxiliary = auxiliary
 
     self.stem0 = nn.Sequential(
-      nn.Conv3d(3, C // 2, kernel_size=3, stride=2, padding=1, bias=False),
+      nn.Conv3d(1, C // 2, kernel_size=3, stride=2, padding=1, bias=False),
       nn.BatchNorm3d(C // 2),
       nn.ReLU(inplace=True),
       nn.Conv3d(C // 2, C, 3, stride=2, padding=1, bias=False),
