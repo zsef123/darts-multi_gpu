@@ -22,8 +22,7 @@ class AvgrageMeter(object):
     self.avg = self.sum / self.cnt
 
 
-def accuracy(output, target, topk=(1,)):
-  maxk = max(topk)
+def accuracy(output, target):
   batch_size = target.size(0)
 
   _, idx = output.max(dim=1)
@@ -81,7 +80,7 @@ def save_checkpoint(state, is_best, save, valid, test):
   filename = os.path.join(save, 'checkpoint.pth.tar')
   torch.save(state, filename)
   if is_best:
-    best_filename = os.path.join(save, 'valid%.4f_test%.4f_model_best.pth.tar'%(vaild, test))
+    best_filename = os.path.join(save, 'valid%.4f_test%.4f_model_best.pth.tar'%(valid, test))
     shutil.copyfile(filename, best_filename)
 
 

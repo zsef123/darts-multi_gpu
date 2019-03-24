@@ -2,97 +2,130 @@ import torch
 import torch.nn as nn
 
 OPS = {
-  'none' : lambda C, stride, affine: Zero(stride),
-  'avg_pool_3x3' : lambda C, stride, affine: nn.AvgPool3d(3, stride=stride, padding=1, count_include_pad=False),
-  'max_pool_3x3' : lambda C, stride, affine: nn.MaxPool3d(3, stride=stride, padding=1),
-  'skip_connect' : lambda C, stride, affine: Identity() if stride == 1 else FactorizedReduce(C, C, affine=affine),
-  'sep_conv_3x3' : lambda C, stride, affine: SepConv(C, C, 3, stride, 1, affine=affine),
-  'sep_conv_5x5' : lambda C, stride, affine: SepConv(C, C, 5, stride, 2, affine=affine),
-  'dil_conv_3x3' : lambda C, stride, affine: DilConv(C, C, 3, stride, 2, 2, affine=affine),
-  'dil_conv_5x5' : lambda C, stride, affine: DilConv(C, C, 5, stride, 4, 2, affine=affine),
+    'none' : lambda C, stride, affine: Zero(stride),
+    'avg_pool_3x3' : lambda C, stride, affine: nn.AvgPool3d(3, stride=stride, padding=1, count_include_pad=False),
+    'max_pool_3x3' : lambda C, stride, affine: nn.MaxPool3d(3, stride=stride, padding=1),
+    'skip_connect' : lambda C, stride, affine: Identity() if stride == 1 else FactorizedReduce(C, C, affine=affine),
+    'sep_conv_3x3' : lambda C, stride, affine: SepConv(C, C, 3, stride, 1, affine=affine),
+    'sep_conv_5x5' : lambda C, stride, affine: SepConv(C, C, 5, stride, 2, affine=affine),
+    'dil_conv_3x3' : lambda C, stride, affine: DilConv(C, C, 3, stride, 2, 2, affine=affine),
+    'dil_conv_5x5' : lambda C, stride, affine: DilConv(C, C, 5, stride, 4, 2, affine=affine),
+
+    'seblock': lambda C, stride, _: SEBlock(C, 4, stride),
+
 }
 
 class ReLUConvBN(nn.Module):
-
-  def __init__(self, C_in, C_out, kernel_size, stride, padding, affine=True):
-    super(ReLUConvBN, self).__init__()
-    self.op = nn.Sequential(
-      nn.ReLU(inplace=False),
-      nn.Conv3d(C_in, C_out, kernel_size, stride=stride, padding=padding, bias=False),
-      nn.BatchNorm3d(C_out, affine=affine)
+    def __init__(self, C_in, C_out, kernel_size, stride, padding, affine=True):
+        super(ReLUConvBN, self).__init__()
+        self.op = nn.Sequential(
+        nn.ReLU(inplace=False),
+        nn.Conv3d(C_in, C_out, kernel_size, stride=stride, padding=padding, bias=False),
+        nn.BatchNorm3d(C_out, affine=affine)
     )
 
-  def forward(self, x):
-    return self.op(x)
+    def forward(self, x):
+        return self.op(x)
 
 class DilConv(nn.Module):
-    
-  def __init__(self, C_in, C_out, kernel_size, stride, padding, dilation, affine=True):
-    super(DilConv, self).__init__()
-    self.op = nn.Sequential(
-      nn.ReLU(inplace=False),
-      nn.Conv3d(C_in, C_in, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=C_in, bias=False),
-      nn.Conv3d(C_in, C_out, kernel_size=1, padding=0, bias=False),
-      nn.BatchNorm3d(C_out, affine=affine),
-      )
+        
+    def __init__(self, C_in, C_out, kernel_size, stride, padding, dilation, affine=True):
+        super(DilConv, self).__init__()
+        self.op = nn.Sequential(
+            nn.ReLU(inplace=False),
+            nn.Conv3d(C_in, C_in, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=C_in, bias=False),
+            nn.Conv3d(C_in, C_out, kernel_size=1, padding=0, bias=False),
+            nn.BatchNorm3d(C_out, affine=affine),
+        )
 
-  def forward(self, x):
-    return self.op(x)
+    def forward(self, x):
+        return self.op(x)
 
 
 class SepConv(nn.Module):
-    
-  def __init__(self, C_in, C_out, kernel_size, stride, padding, affine=True):
-    super(SepConv, self).__init__()
-    self.op = nn.Sequential(
-      nn.ReLU(inplace=False),
-      nn.Conv3d(C_in, C_in, kernel_size=kernel_size, stride=stride, padding=padding, groups=C_in, bias=False),
-      nn.Conv3d(C_in, C_in, kernel_size=1, padding=0, bias=False),
-      nn.BatchNorm3d(C_in, affine=affine),
-      nn.ReLU(inplace=False),
-      nn.Conv3d(C_in, C_in, kernel_size=kernel_size, stride=1, padding=padding, groups=C_in, bias=False),
-      nn.Conv3d(C_in, C_out, kernel_size=1, padding=0, bias=False),
-      nn.BatchNorm3d(C_out, affine=affine),
-      )
+        
+    def __init__(self, C_in, C_out, kernel_size, stride, padding, affine=True):
+        super(SepConv, self).__init__()
+        self.op = nn.Sequential(
+            nn.ReLU(inplace=False),
+            nn.Conv3d(C_in, C_in, kernel_size=kernel_size, stride=stride, padding=padding, groups=C_in, bias=False),
+            nn.Conv3d(C_in, C_in, kernel_size=1, padding=0, bias=False),
+            nn.BatchNorm3d(C_in, affine=affine),
+            nn.ReLU(inplace=False),
+            nn.Conv3d(C_in, C_in, kernel_size=kernel_size, stride=1, padding=padding, groups=C_in, bias=False),
+            nn.Conv3d(C_in, C_out, kernel_size=1, padding=0, bias=False),
+            nn.BatchNorm3d(C_out, affine=affine),
+        )
 
-  def forward(self, x):
-    return self.op(x)
+    def forward(self, x):
+        return self.op(x)
 
 
 class Identity(nn.Module):
 
-  def __init__(self):
-    super(Identity, self).__init__()
+    def __init__(self):
+        super(Identity, self).__init__()
 
-  def forward(self, x):
-    return x
+    def forward(self, x):
+        return x
 
 
 class Zero(nn.Module):
 
-  def __init__(self, stride):
-    super(Zero, self).__init__()
-    self.stride = stride
+    def __init__(self, stride):
+        super(Zero, self).__init__()
+        self.stride = stride
 
-  def forward(self, x):
-    if self.stride == 1:
-      return x.mul(0.)
-    return x[:,:,::self.stride,::self.stride].mul(0.)
+    def forward(self, x):
+        if self.stride == 1:
+            return x.mul(0.)
+        return x[:,:,::self.stride,::self.stride].mul(0.)
 
 
 class FactorizedReduce(nn.Module):
 
-  def __init__(self, C_in, C_out, affine=True):
-    super(FactorizedReduce, self).__init__()
-    assert C_out % 2 == 0
-    self.relu = nn.ReLU(inplace=False)
-    self.conv_1 = nn.Conv3d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False)
-    self.conv_2 = nn.Conv3d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False) 
-    self.bn = nn.BatchNorm3d(C_out, affine=affine)
+    def __init__(self, C_in, C_out, affine=True):
+        super(FactorizedReduce, self).__init__()
+        assert C_out % 2 == 0
+        self.relu = nn.ReLU(inplace=False)
+        self.conv_1 = nn.Conv3d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False)
+        self.conv_2 = nn.Conv3d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False) 
+        self.bn = nn.BatchNorm3d(C_out, affine=affine)
 
-  def forward(self, x):
-    x = self.relu(x)
-    out = torch.cat([self.conv_1(x), self.conv_2(x)], dim=1)
-    out = self.bn(out)
-    return out
+    def forward(self, x):
+        x = self.relu(x)
+        out = torch.cat([self.conv_1(x), self.conv_2(x)], dim=1)
+        out = self.bn(out)
+        return out
 
+
+
+class SEBlock(nn.Module):
+    def __init__(self, in_ch, r, stride):
+        super().__init__()
+        self.pre_x = None
+        if stride > 1:
+            self.pre_x = FactorizedReduce(in_ch, in_ch, affine=False)
+        self.se = nn.Sequential(
+            GlobalAvgPool(),
+            nn.Linear(in_ch, in_ch // r),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_ch // r, in_ch),
+            nn.Sigmoid()
+        )
+        self.in_ch = in_ch
+
+    def forward(self, x):
+        se_weight = self.se(x).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        if self.pre_x:
+            x = self.pre_x(x)
+        x = x.mul(se_weight)
+        return x
+
+
+class GlobalAvgPool(nn.Module):
+    def __init__(self):
+        super(GlobalAvgPool, self).__init__()
+
+    def forward(self, x):
+        return x.view(*(x.shape[:2]), -1).mean(2)

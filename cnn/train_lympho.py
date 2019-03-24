@@ -121,7 +121,7 @@ def main():
     logging.info('epoch %d lr %e', epoch, scheduler.get_lr()[0])
     model.module.drop_path_prob = args.drop_path_prob * epoch / args.epochs
 
-    train_acc, train_obj = train(train_queue, model, criterion_smooth, optimizer)
+    train_acc, train_obj = train(train_queue, model, criterion, optimizer)
     logging.info('train_acc %f', train_acc)
 
     valid_acc_top1, valid_obj = infer(valid_queue, model, criterion)
@@ -187,7 +187,7 @@ def infer(valid_queue, model, criterion):
     logits, _ = model(input)
     loss = criterion(logits, target)
 
-    prec1 = utils.accuracy(logits, target, topk=(1))
+    prec1 = utils.accuracy(logits, target)
     n = input.size(0)
     objs.update(loss.item(), n)
     top1.update(prec1, n)
